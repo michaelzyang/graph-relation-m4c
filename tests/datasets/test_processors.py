@@ -1,9 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import os
+import random
 import tempfile
 import unittest
 
 import torch
+from mmf.datasets.processors.bert_processors import MaskedMultiSentenceBertTokenizer
 from mmf.datasets.processors.processors import (
     CaptionProcessor,
     EvalAIAnswerProcessor,
@@ -173,3 +175,139 @@ class TestDatasetProcessors(unittest.TestCase):
 
         self.assertRaises(AssertionError, processor, {"label": "UNK"})
         os.unlink(f.name)
+
+    def test_masked_multi_sentence_full_sentences(self):
+        torch.manual_seed(1)
+        random.seed(1)
+        config = self._masked_multi_sentence_config("full_sentences")
+        config = OmegaConf.create(config)
+        masked_token_processor = MaskedMultiSentenceBertTokenizer(config)
+        processed = masked_token_processor({"sentences": self._sample_sentences()})
+
+        self.assertEquals(processed["tokens"][0], "[CLS]")
+        self.assertEquals(self._filter_nonzero(processed["input_ids"])[-1], 102)
+        self.assertEquals(processed["lm_label_ids"][9], 2157)
+        self.assertEquals(processed["lm_label_ids"][-5], 1996)
+        self.assertNotIn(1, processed["segment_ids"].tolist())
+        self.assertEquals(
+            len(self._filter_nonzero(processed["input_mask"])), len(processed["tokens"])
+        )
+        self.assertEquals(
+            " ".join(processed["tokens"]),
+            (
+                "[CLS] ben is an inside view . on the [MASK] [MASK] there is a [MASK] ,"
+                " in front of that [MASK] [MASK] a small table ."
+                " at [MASK] back of this [SEP]"
+            ),
+        )
+
+    def test_masked_multi_sentence_two_sentences(self):
+        torch.manual_seed(1)
+        random.seed(1)
+        config = self._masked_multi_sentence_config("two_sentences")
+        config = OmegaConf.create(config)
+        masked_token_processor = MaskedMultiSentenceBertTokenizer(config)
+        processed = masked_token_processor({"sentences": self._sample_sentences()})
+
+        self.assertEquals(processed["tokens"][0], "[CLS]")
+        self.assertEquals(self._filter_nonzero(processed["input_ids"])[-1], 102)
+        self.assertEquals(processed["lm_label_ids"][9], 2157)
+        self.assertEquals(processed["lm_label_ids"][-11], 2003)
+        self.assertNotIn(1, processed["segment_ids"].tolist())
+        self.assertEquals(
+            len(self._filter_nonzero(processed["input_mask"])), len(processed["tokens"])
+        )
+        self.assertEquals(
+            " ".join(processed["tokens"]),
+            (
+                "[CLS] ben is an inside view . on the [MASK] [MASK] there is a [MASK] ,"
+                " in front of that [MASK] [MASK] a small table . [SEP]"
+            ),
+        )
+
+    def test_masked_multi_sentence_rand_sentences(self):
+        torch.manual_seed(1)
+        random.seed(1)
+        config = self._masked_multi_sentence_config("rand_sentences")
+        config = OmegaConf.create(config)
+        masked_token_processor = MaskedMultiSentenceBertTokenizer(config)
+        processed = masked_token_processor({"sentences": self._sample_sentences()})
+
+        self.assertEquals(processed["tokens"][0], "[CLS]")
+        self.assertEquals(self._filter_nonzero(processed["input_ids"])[-1], 102)
+        self.assertEquals(processed["lm_label_ids"][3], 2157)
+        self.assertEquals(processed["lm_label_ids"][-10], 2067)
+        self.assertNotIn(1, processed["segment_ids"].tolist())
+        self.assertEquals(
+            len(self._filter_nonzero(processed["input_mask"])), len(processed["tokens"])
+        )
+        self.assertEquals(
+            " ".join(processed["tokens"]),
+            (
+                "[CLS] on the [MASK] [MASK] there is a couch ,"
+                " in front of that there is a small [MASK] ."
+                " [MASK] the [MASK] of this couch there is a frame is [SEP]"
+            ),
+        )
+
+    def test_masked_multi_sentence_full_sentences_with_separator(self):
+        torch.manual_seed(1)
+        random.seed(1)
+        config = self._masked_multi_sentence_config(
+            "full_sentences", with_separator=True
+        )
+        config = OmegaConf.create(config)
+        masked_token_processor = MaskedMultiSentenceBertTokenizer(config)
+        processed = masked_token_processor({"sentences": self._sample_sentences()})
+
+        self.assertEquals(processed["tokens"][0], "[CLS]")
+        self.assertEquals(self._filter_nonzero(processed["input_ids"])[-1], 102)
+        self.assertEquals(processed["lm_label_ids"][10], 2157)
+        self.assertEquals(processed["lm_label_ids"][-3], 1996)
+        self.assertNotIn(1, processed["segment_ids"].tolist())
+        self.assertEquals(
+            len(self._filter_nonzero(processed["input_mask"])), len(processed["tokens"])
+        )
+        self.assertEquals(
+            " ".join(processed["tokens"]),
+            (
+                "[CLS] ben is an inside view ."
+                " [SEP] on the [MASK] [MASK] there is a [MASK] , "
+                "in front of that [MASK] [MASK] a small table ."
+                " [SEP] at [MASK] back [SEP]"
+            ),
+        )
+
+    def _masked_multi_sentence_config(
+        self, multisentence_tokenizer_type, with_separator=False
+    ):
+        return {
+            "tokenizer_config": {
+                "type": "bert-base-uncased",
+                "params": {"do_lower_case": True},
+            },
+            "mask_probability": 0.15,
+            "max_seq_length": 32,
+            "type": multisentence_tokenizer_type,
+            "with_sentence_separator": with_separator,
+        }
+
+    def _filter_nonzero(self, list_to_filter):
+        return list(filter(lambda x: x != 0, list_to_filter))
+
+    def _sample_sentences(self):
+        return [
+            "This is an inside view.",
+            (
+                "On the right side there is a couch,"
+                " in front of that there is a small table."
+            ),
+            (
+                "At the back of this couch there is a frame"
+                " is attached to the wall and also there is a lamp."
+            ),
+            "Beside that there is a door.",
+            "On the left side I can see two chairs on the floor.",
+            "In the background there is a table on which few objects are placed.",
+            "On the above there is a mirror is attached to the wall.",
+        ]
