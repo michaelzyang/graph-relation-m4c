@@ -108,7 +108,8 @@ class M4C(BaseModel):
         )
 
         # object location feature: relative bounding box coordinates (4-dim)
-        self.linear_obj_bbox_to_mmt_in = nn.Linear(4, self.mmt_config.hidden_size)
+        # MZ added: add 8 absolute position dummy labels
+        self.linear_obj_bbox_to_mmt_in = nn.Linear(4 + 8, self.mmt_config.hidden_size)  # MZ modified
 
         self.obj_feat_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.obj_bbox_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
@@ -138,7 +139,8 @@ class M4C(BaseModel):
         )
 
         # OCR location feature: relative bounding box coordinates (4-dim)
-        self.linear_ocr_bbox_to_mmt_in = nn.Linear(4, self.mmt_config.hidden_size)
+        # MZ added: add 8 absolute position dummy labels
+        self.linear_ocr_bbox_to_mmt_in = nn.Linear(4 + 8, self.mmt_config.hidden_size)  # MZ modified
 
         self.ocr_feat_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.ocr_bbox_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
@@ -199,6 +201,15 @@ class M4C(BaseModel):
 
         obj_feat = obj_fc7
         obj_bbox = sample_list.obj_bbox_coordinates
+        # ================================ MZ start ================================ #
+        # Inspect sample list object
+        print("sample_list batch size: ", sample_list.get_batch_size())
+        print("sample_list fields: ", sample_list.fields())
+        print("obj_bbox_coordinates: ", type(obj_bbox), obj_bbox.shape, obj_bbox)
+        print("sample_list dict: ", sample_list.to_dict())
+        # Engineer and concat 8-dim absolute position dummy label features
+        # TODO
+        # ================================= MZ end ================================= #
         obj_mmt_in = self.obj_feat_layer_norm(
             self.linear_obj_feat_to_mmt_in(obj_feat)
         ) + self.obj_bbox_layer_norm(self.linear_obj_bbox_to_mmt_in(obj_bbox))
@@ -239,6 +250,10 @@ class M4C(BaseModel):
             [ocr_fasttext, ocr_phoc, ocr_fc7, ocr_order_vectors], dim=-1
         )
         ocr_bbox = sample_list.ocr_bbox_coordinates
+        # ================================ MZ start ================================ #
+        # Engineer and concat 8-dim absolute position dummy label features
+        # TODO
+        # ================================= MZ end ================================= #
         if self.remove_ocr_semantics:
             ocr_feat = torch.zeros_like(ocr_feat)
         if self.remove_ocr_bbox:
