@@ -94,7 +94,7 @@ class M4C(BaseModel):
         else:
             self.text_bert_out_linear = nn.Identity()
 
-    def _build_obj_encoding(self):
+    def _build_obj_encoding(self, use_absolute_position_feats=True):  # MZ modified
         # object appearance feature: Faster R-CNN
         self.obj_faster_rcnn_fc7 = build_image_encoder(
             self._build_encoder_config(), direct_features=True
@@ -107,15 +107,16 @@ class M4C(BaseModel):
             self.config.obj.mmt_in_dim, self.mmt_config.hidden_size
         )
 
-        # object location feature: relative bounding box coordinates (4-dim)
-        # MZ added: add 8 absolute position dummy labels
-        self.linear_obj_bbox_to_mmt_in = nn.Linear(4 + 8, self.mmt_config.hidden_size)  # MZ modified
+        # ================================ MZ start ================================ #
+        bbox_dim = 4 + 4 if use_absolute_position_feats else 4
+        self.linear_obj_bbox_to_mmt_in = nn.Linear(bbox_dim, self.mmt_config.hidden_size)
+        # ================================= MZ end ================================= #
 
         self.obj_feat_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.obj_bbox_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.obj_drop = nn.Dropout(self.config.obj.dropout_prob)
 
-    def _build_ocr_encoding(self):
+    def _build_ocr_encoding(self, use_absolute_position_feats=True):  # MZ modified
         self.remove_ocr_fasttext = getattr(
             self.config.ocr, "remove_ocr_fasttext", False
         )
@@ -138,9 +139,10 @@ class M4C(BaseModel):
             self.config.ocr.mmt_in_dim, self.mmt_config.hidden_size
         )
 
-        # OCR location feature: relative bounding box coordinates (4-dim)
-        # MZ added: add 8 absolute position dummy labels
-        self.linear_ocr_bbox_to_mmt_in = nn.Linear(4 + 8, self.mmt_config.hidden_size)  # MZ modified
+        # ================================ MZ start ================================ #
+        bbox_dim = 4 + 4 if use_absolute_position_feats else 4
+        self.linear_ocr_bbox_to_mmt_in = nn.Linear(bbox_dim, self.mmt_config.hidden_size)
+        # ================================= MZ end ================================= #
 
         self.ocr_feat_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.ocr_bbox_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
@@ -193,7 +195,7 @@ class M4C(BaseModel):
             sample_list.text_len, sample_list.text.size(1)
         )
 
-    def _forward_obj_encoding(self, sample_list, fwd_results):
+    def _forward_obj_encoding(self, sample_list, fwd_results, use_absolute_position_feats=True):  # MZ modified
         # object appearance feature: Faster R-CNN fc7
         obj_fc6 = sample_list.image_feature_0
         obj_fc7 = self.obj_faster_rcnn_fc7(obj_fc6)
@@ -202,13 +204,10 @@ class M4C(BaseModel):
         obj_feat = obj_fc7
         obj_bbox = sample_list.obj_bbox_coordinates
         # ================================ MZ start ================================ #
-        # Inspect sample list object
-        print("sample_list batch size: ", sample_list.get_batch_size())
-        print("sample_list fields: ", sample_list.fields())
-        print("obj_bbox_coordinates: ", type(obj_bbox), obj_bbox.shape, obj_bbox)
-        print("sample_list dict: ", sample_list.to_dict())
-        # Engineer and concat 8-dim absolute position dummy label features
-        # TODO
+        if use_absolute_position_feats:
+            # Engineer and concat 4-dim absolute position dummy label features
+            absolute_position_feats = self._get_absolute_position_features(obj_bbox)
+            obj_bbox = torch.cat([obj_bbox, absolute_position_feats], dim=2)
         # ================================= MZ end ================================= #
         obj_mmt_in = self.obj_feat_layer_norm(
             self.linear_obj_feat_to_mmt_in(obj_feat)
@@ -220,7 +219,7 @@ class M4C(BaseModel):
         obj_nums = sample_list.image_info_0.max_features
         fwd_results["obj_mask"] = _get_mask(obj_nums, obj_mmt_in.size(1))
 
-    def _forward_ocr_encoding(self, sample_list, fwd_results):
+    def _forward_ocr_encoding(self, sample_list, fwd_results, use_absolute_position_feats=True):  # MZ modified
         # OCR FastText feature (300-dim)
         ocr_fasttext = sample_list.context_feature_0
         ocr_fasttext = F.normalize(ocr_fasttext, dim=-1)
@@ -251,8 +250,10 @@ class M4C(BaseModel):
         )
         ocr_bbox = sample_list.ocr_bbox_coordinates
         # ================================ MZ start ================================ #
-        # Engineer and concat 8-dim absolute position dummy label features
-        # TODO
+        if use_absolute_position_feats:
+            # Engineer and concat 4-dim absolute position dummy label features
+            absolute_position_feats = self._get_absolute_position_features(ocr_bbox)
+            ocr_bbox = torch.cat([ocr_bbox, absolute_position_feats], dim=2)
         # ================================= MZ end ================================= #
         if self.remove_ocr_semantics:
             ocr_feat = torch.zeros_like(ocr_feat)
@@ -267,6 +268,38 @@ class M4C(BaseModel):
         # binary mask of valid OCR vs padding
         ocr_nums = sample_list.context_info_0.max_features
         fwd_results["ocr_mask"] = _get_mask(ocr_nums, ocr_mmt_in.size(1))
+
+    # ================================ MZ start ================================ #
+    def _get_absolute_position_features(self, bbox_feats):
+        """
+        Creates absolute position binary labels from the Faster R-CNN 4-dimensional bbox features.
+        These labels are:
+            is_left_third - whether the center of the object is in the left third of the image
+            is_right_third - whether the center of the object is in the right third of the image
+            is_top_third - whether the center of the object is in the top third of the image
+            is_bottom_third - whether the center of the object is in the right third of the image
+
+        :param bbox_feats: torch.Tensor of shape (batch_size, num_obj, 4), where the 4 bbox features are
+                           [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :return: torch.Tensor of shape (batch_size, num_obj, 4), where the 4 absolute position features are
+                 [is_left_third, is_right_third, is_top_third, is_bottom_third]
+        """
+        def _get_bbox_centers(bbox_feats):
+            x = (bbox_feats[:, :, 0] + bbox_feats[:, :, 2]) / 2
+            y = (bbox_feats[:, :, 1] + bbox_feats[:, :, 3]) / 2
+            bbox_centers = torch.cat([x, y], dim=2)
+            return bbox_centers
+
+        obj_centers = _get_bbox_centers(bbox_feats)  # (batch_size, num_obj, 2)
+
+        is_left_third = torch.where(obj_centers[:, :, 1] <= 0.33, torch.ones(1), torch.zeros(1))
+        is_right_third = torch.where(obj_centers[:, :, 1] > 0.66, torch.ones(1), torch.zeros(1))
+        is_top_third = torch.where(obj_centers[:, :, 0] <= 0.33, torch.ones(1), torch.zeros(1))
+        is_bottom_third = torch.where(obj_centers[:, :, 0] > 0.66, torch.ones(1), torch.zeros(1))
+        absolute_position_feats = torch.cat([is_left_third, is_right_third, is_top_third, is_bottom_third], dim=2)
+
+        return absolute_position_feats
+    # ================================= MZ end ================================= #
 
     def _forward_mmt(self, sample_list, fwd_results):
         # first forward the text BERT layers
