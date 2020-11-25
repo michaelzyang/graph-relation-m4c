@@ -277,8 +277,19 @@ class M4C(BaseModel):
         mmt_ocr_output = fwd_results["mmt_ocr_output"]
         ocr_mask = fwd_results["ocr_mask"]
 
+        # ================================ AA start ================================ #
+        # add question text output and mask
+        mmt_txt_output = fwd_results["mmt_txt_output"]
+        txt_mask = fwd_results["txt_mask"]
+        # ================================= AA end ================================= #
+
         fixed_scores = self.classifier(mmt_dec_output)
-        dynamic_ocr_scores = self.ocr_ptr_net(mmt_dec_output, mmt_ocr_output, ocr_mask)
+
+        # ================================ AA start ================================ #
+        # concatenate txt and ocr output and masks and pass to dynamic pointer network
+        dynamic_ocr_scores = self.ocr_ptr_net(mmt_dec_output, torch.cat([mmt_ocr_output, mmt_txt_output], dim=1), torch.cat([ocr_mask, txt_mask], dim=1))
+        # ================================= AA end ================================= #
+
         scores = torch.cat([fixed_scores, dynamic_ocr_scores], dim=-1)
         fwd_results["scores"] = scores
 
@@ -395,7 +406,9 @@ class MMT(BertPreTrainedModel):
 
         # build embeddings for predictions in previous decoding steps
         # fixed_ans_emb is an embedding lookup table for each fixed vocabulary
-        dec_emb = self.prev_pred_embeddings(fixed_ans_emb, ocr_emb, prev_inds)
+
+        # add txt_emb with vocab and ocr embeddings
+        dec_emb = self.prev_pred_embeddings(fixed_ans_emb, ocr_emb, txt_emb, prev_inds)
 
         # a zero mask for decoding steps, so the encoding steps elements can't
         # attend to decoding steps.
@@ -506,10 +519,16 @@ class PrevPredEmbeddings(nn.Module):
 
         self.ans_layer_norm = nn.LayerNorm(hidden_size, eps=ln_eps)
         self.ocr_layer_norm = nn.LayerNorm(hidden_size, eps=ln_eps)
+
+        # ================================ AA start ================================ #
+        # add txt_layer_norm
+        self.txt_layer_norm = nn.LayerNorm(hidden_size, eps=ln_eps)
+        # ================================ AA end ================================ #
+
         self.emb_layer_norm = nn.LayerNorm(hidden_size, eps=ln_eps)
         self.emb_dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, ans_emb, ocr_emb, prev_inds):
+    def forward(self, ans_emb, ocr_emb, txt_emb, prev_inds):
         assert prev_inds.dim() == 2 and prev_inds.dtype == torch.long
         assert ans_emb.dim() == 2
 
@@ -517,21 +536,41 @@ class PrevPredEmbeddings(nn.Module):
         seq_length = prev_inds.size(1)
         ans_num = ans_emb.size(0)
 
+        # ================================ AA start ================================ #
+        txt_ans_num = ans_num + ocr_emb.size(0)
+        # ================================ AA end ================================ #
         # apply layer normalization to both answer embedding and OCR embedding
         # before concatenation, so that they have the same scale
         ans_emb = self.ans_layer_norm(ans_emb)
         ocr_emb = self.ocr_layer_norm(ocr_emb)
+
+        # ================================ AA start ================================ #
+        # add txt_emb layer norm
+        txt_emb = self.txt_layer_norm(txt_emb)
+        # ================================ AA end ================================ #
+
         assert ans_emb.size(-1) == ocr_emb.size(-1)
         ans_emb = ans_emb.unsqueeze(0).expand(batch_size, -1, -1)
-        ans_ocr_emb_cat = torch.cat([ans_emb, ocr_emb], dim=1)
-        raw_dec_emb = _batch_gather(ans_ocr_emb_cat, prev_inds)
+
+        # ================================ AA start ================================ #
+        # concat all three
+        ans_ocr_txt_emb_cat = torch.cat([ans_emb, ocr_emb, txt_emb], dim=1)
+        # ================================ AA end ================================ #
+
+        raw_dec_emb = _batch_gather(ans_ocr_txt_emb_cat, prev_inds)
 
         # Add position and type embedding for previous predictions
         position_ids = torch.arange(seq_length, dtype=torch.long, device=ocr_emb.device)
         position_ids = position_ids.unsqueeze(0).expand(batch_size, seq_length)
         position_embeddings = self.position_embeddings(position_ids)
-        # Token type ids: 0 -- vocab; 1 -- OCR
-        token_type_ids = prev_inds.ge(ans_num).long()
+
+        # ================================ AA start ================================ #
+        # Token type ids: 0 -- vocab; 1 -- OCR ; 2 -- question txt
+        token_type_ids_1 = prev_inds.ge(ans_num).long()
+        token_type_ids_2 = prev_inds.ge(txt_ans_num).long()
+        token_type_ids = token_type_ids_1 + token_type_ids_2
+        # ================================ AA end ================================ #
+
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         embeddings = position_embeddings + token_type_embeddings
         embeddings = self.emb_layer_norm(embeddings)
