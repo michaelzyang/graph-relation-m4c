@@ -287,15 +287,15 @@ class M4C(BaseModel):
         def _get_bbox_centers(bbox_feats):
             x = (bbox_feats[:, :, 0] + bbox_feats[:, :, 2]) / 2
             y = (bbox_feats[:, :, 1] + bbox_feats[:, :, 3]) / 2
-            bbox_centers = torch.cat([x, y], dim=2)
+            bbox_centers = torch.cat([x.unsqueeze(2), y.unsqueeze(2)], dim=2)
             return bbox_centers
 
         obj_centers = _get_bbox_centers(bbox_feats)  # (batch_size, num_obj, 2)
 
-        is_left_third = torch.where(obj_centers[:, :, 1] <= 0.33, torch.ones(1), torch.zeros(1))
-        is_right_third = torch.where(obj_centers[:, :, 1] > 0.66, torch.ones(1), torch.zeros(1))
-        is_top_third = torch.where(obj_centers[:, :, 0] <= 0.33, torch.ones(1), torch.zeros(1))
-        is_bottom_third = torch.where(obj_centers[:, :, 0] > 0.66, torch.ones(1), torch.zeros(1))
+        is_left_third = torch.where(obj_centers[:, :, 1] <= 0.33, torch.ones(1), torch.zeros(1)).unsqueeze(2)
+        is_right_third = torch.where(obj_centers[:, :, 1] > 0.66, torch.ones(1), torch.zeros(1)).unsqueeze(2)
+        is_top_third = torch.where(obj_centers[:, :, 0] <= 0.33, torch.ones(1), torch.zeros(1)).unsqueeze(2)
+        is_bottom_third = torch.where(obj_centers[:, :, 0] > 0.66, torch.ones(1), torch.zeros(1)).unsqueeze(2)
         absolute_position_feats = torch.cat([is_left_third, is_right_third, is_top_third, is_bottom_third], dim=2)
 
         return absolute_position_feats
