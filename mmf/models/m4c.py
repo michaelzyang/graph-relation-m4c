@@ -292,10 +292,12 @@ class M4C(BaseModel):
 
         obj_centers = _get_bbox_centers(bbox_feats)  # (batch_size, num_obj, 2)
 
-        is_left_third = torch.where(obj_centers[:, :, 1] <= 0.33, torch.ones(1), torch.zeros(1)).unsqueeze(2)
-        is_right_third = torch.where(obj_centers[:, :, 1] > 0.66, torch.ones(1), torch.zeros(1)).unsqueeze(2)
-        is_top_third = torch.where(obj_centers[:, :, 0] <= 0.33, torch.ones(1), torch.zeros(1)).unsqueeze(2)
-        is_bottom_third = torch.where(obj_centers[:, :, 0] > 0.66, torch.ones(1), torch.zeros(1)).unsqueeze(2)
+        one = torch.ones(1, device=bbox_feats.device)
+        zero = torch.zeros(1, device=bbox_feats.device)
+        is_left_third = torch.where(obj_centers[:, :, 1] <= 0.33, one, zero).unsqueeze(2)
+        is_right_third = torch.where(obj_centers[:, :, 1] > 0.66, one, zero).unsqueeze(2)
+        is_top_third = torch.where(obj_centers[:, :, 0] <= 0.33, one, zero).unsqueeze(2)
+        is_bottom_third = torch.where(obj_centers[:, :, 0] > 0.66, one, zero).unsqueeze(2)
         absolute_position_feats = torch.cat([is_left_third, is_right_third, is_top_third, is_bottom_third], dim=2)
 
         return absolute_position_feats
