@@ -67,7 +67,7 @@ class TextVQADataset(MMFDataset):
                     answer_words.append(word_tokenize(tokens[answer_id]))
                     pred_source.append("QUESTION")
         # ================================ DCR end ================================ #
-                else if answer_id >= answer_space_size:
+                elif answer_id >= answer_space_size:
                     answer_id -= answer_space_size
                     answer_words.append(word_tokenize(tokens[answer_id]))
                     pred_source.append("OCR")
