@@ -18,6 +18,7 @@ model_config:
     classifier:
       type: linear
       ocr_max_num: 50
+      txt_max_num: 20
       ocr_ptr_net:
         hidden_size: 768
         query_key_size: 768

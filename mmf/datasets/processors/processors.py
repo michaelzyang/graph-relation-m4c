@@ -1233,7 +1233,7 @@ class M4CAnswerProcessor(BaseProcessor):
         return sentence.split()
 
     def match_answer_to_vocab_ocr_seq(
-        self, answer, vocab2idx_dict, ocr2inds_dict, max_match_num=20
+        self, answer, vocab2idx_dict, ocr2inds_dict, txt2inds_dict, max_match_num=20
     ):
         """
         Match an answer to a list of sequences of indices
@@ -1241,6 +1241,10 @@ class M4CAnswerProcessor(BaseProcessor):
         (in the index address space, the OCR tokens are after the fixed vocab)
         """
         num_vocab = len(vocab2idx_dict)
+
+        # ================================ DCR start ================================ #
+        ocr_vocab = len(ocr2inds_dict)
+        # ================================ DCR end ================================ #
 
         answer_words = self.tokenize(answer)
         answer_word_matches = []
@@ -1253,6 +1257,13 @@ class M4CAnswerProcessor(BaseProcessor):
             # we put OCR after the fixed vocabulary in the answer index space
             # so add num_vocab offset to the OCR index
             matched_inds.extend([num_vocab + idx for idx in ocr2inds_dict[word]])
+
+        # ================================ DCR start ================================ #
+            # match answer word to Question tokes
+            # we put question tokens after the OCR in the answer index space
+            # so add num_vocab + ocr size offset to the text index
+            matched_inds.extend([num_vocab + ocr_vocab + idx for idx in txt2inds_dict[word]])
+        # ================================ DCR end ================================ #
             if len(matched_inds) == 0:
                 if self.match_answer_to_unk:
                     matched_inds.append(vocab2idx_dict.get("<unk>"))
@@ -1325,9 +1336,17 @@ class M4CAnswerProcessor(BaseProcessor):
         ocr2inds_dict = defaultdict(list)
         for idx, token in enumerate(item["tokens"]):
             ocr2inds_dict[token].append(idx)
+
+        # ================================ DCR start ================================ #
+        txt2idx_dict = defaultdict(list)
+        # TO DO : get item['txt_tokens']
+        for idx, token in enumerate(item["question_tokens"]):
+            txt2inds_dict[token].append(idx)
+        # ================================ DCR end ================================ #
+
         answer_dec_inds = [
             self.match_answer_to_vocab_ocr_seq(
-                a, self.answer_vocab.word2idx_dict, ocr2inds_dict
+                a, self.answer_vocab.word2idx_dict, ocr2inds_dict, txt2idx_dict
             )
             for a in answers
         ]

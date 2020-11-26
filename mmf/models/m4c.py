@@ -160,7 +160,9 @@ class M4C(BaseModel):
         num_choices = registry.get(self._datasets[0] + "_num_final_outputs")
         # remove the OCR copying dimensions in LoRRA's classifier output
         # (OCR copying will be handled separately)
-        num_choices -= self.config.classifier.ocr_max_num
+
+        num_choices -= (self.config.classifier.ocr_max_num + self.config.classifier.txt_max_num)
+
         self.classifier = ClassifierLayer(
             self.config.classifier.type,
             in_dim=self.mmt_config.hidden_size,
@@ -352,7 +354,8 @@ class M4C(BaseModel):
             f"{dataset}_num_final_outputs",
             # Need to add as it is subtracted
             checkpoint["classifier.module.weight"].size(0)
-            + config.classifier.ocr_max_num,
+            + config.classifier.ocr_max_num
+            + config.classifier.txt_max_num,
         )
         # Fix this later, when processor pipeline is available
         answer_processor = OmegaConf.create({"BOS_IDX": 1})

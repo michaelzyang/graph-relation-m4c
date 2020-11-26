@@ -45,6 +45,11 @@ class TextVQADataset(MMFDataset):
         batch_size = len(report.question_id)
         pred_answers = report.scores.argmax(dim=-1).view(batch_size, -1)
         answer_space_size = answer_processor.get_true_vocab_size()
+        
+        # ================================ DCR start ================================ #
+        # TO DO: Don't hardcode (had to because of Aditya)
+        ocr_space_size = 50
+        # ================================ DCR end ================================ #
 
         image_ids = report.image_id.cpu().numpy()
         context_tokens = report.context_tokens.cpu().numpy()
@@ -56,7 +61,13 @@ class TextVQADataset(MMFDataset):
             answer_words = []
             pred_source = []
             for answer_id in pred_answers[idx].tolist():
-                if answer_id >= answer_space_size:
+        # ================================ DCR start ================================ #
+                if answer_id >= answer_space_size + ocr_space_size:
+                    answer_id -= (answer_space_size + ocr_space_size)
+                    answer_words.append(word_tokenize(tokens[answer_id]))
+                    pred_source.append("QUESTION")
+        # ================================ DCR end ================================ #
+                else if answer_id >= answer_space_size:
                     answer_id -= answer_space_size
                     answer_words.append(word_tokenize(tokens[answer_id]))
                     pred_source.append("OCR")
@@ -216,6 +227,11 @@ class TextVQADataset(MMFDataset):
         answer_processor_arg = {"answers": answers}
 
         answer_processor_arg["tokens"] = sample.pop("ocr_tokens", [])
+
+        # ================================ DCR start ================================ #
+        question_tokens = sample_info["question_tokens"]
+        answer_processor_arg["question_tokens"] = self.context_processor({"tokens": question_tokens})["tokens"]
+        # ================================ DCR end ================================ #
 
         processed_answers = self.answer_processor(answer_processor_arg)
 
