@@ -630,6 +630,10 @@ class TextVQAAccuracy(BaseMetric):
         answers = sample_list.get(self.gt_key).cpu().numpy()
         answer_space_size = answer_processor.get_true_vocab_size()
 
+        # ================================ AA start ================================ #
+        ocr_space_size = 50
+        # ================================ AA end ================================ #
+
         predictions = []
         from mmf.utils.distributed import byte_tensor_to_object
         from mmf.utils.text import word_tokenize
@@ -638,7 +642,12 @@ class TextVQAAccuracy(BaseMetric):
             tokens = byte_tensor_to_object(context_tokens[idx])
             answer_words = []
             for answer_id in pred_answers[idx].tolist():
-                if answer_id >= answer_space_size:
+            # ================================ AA start ================================ #
+                if answer_id >= answer_space_size + ocr_space_size:
+                    answer_id -= (answer_space_size + ocr_space_size)
+                    answer_words.append(word_tokenize(tokens[answer_id]))
+            # ================================ AA end ================================ #
+                elif answer_id >= answer_space_size:
                     answer_id -= answer_space_size
                     answer_words.append(word_tokenize(tokens[answer_id]))
                 else:
@@ -1022,3 +1031,4 @@ class RecallAtPrecisionK(BaseMetric):
             value = 0
 
         return expected.new_tensor(value, dtype=torch.float)
+
