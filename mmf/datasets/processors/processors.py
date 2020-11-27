@@ -1287,7 +1287,7 @@ class M4CAnswerProcessor(BaseProcessor):
     def get_vocab_size(self):
         answer_vocab_nums = self.answer_vocab.num_vocab
         answer_vocab_nums += self.max_length
-
+        answer_vocab_nums += 20
         return answer_vocab_nums
 
     def get_true_vocab_size(self):
@@ -1341,7 +1341,7 @@ class M4CAnswerProcessor(BaseProcessor):
         txt2idx_dict = defaultdict(list)
         # TO DO : get item['txt_tokens']
         for idx, token in enumerate(item["question_tokens"]):
-            txt2inds_dict[token].append(idx)
+            txt2idx_dict[token].append(idx)
         # ================================ DCR end ================================ #
 
         answer_dec_inds = [
