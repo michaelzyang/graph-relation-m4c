@@ -87,6 +87,7 @@ from mmf.utils.file_io import PathManager
 from mmf.utils.text import VocabDict
 from mmf.utils.vocab import Vocab, WordToVectorDict
 
+from mmf.utils.distributed import object_to_byte_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -1243,7 +1244,7 @@ class M4CAnswerProcessor(BaseProcessor):
         num_vocab = len(vocab2idx_dict)
 
         # ================================ DCR start ================================ #
-        ocr_vocab = len(ocr2inds_dict)
+        ocr_vocab = 50
         # ================================ DCR end ================================ #
 
         answer_words = self.tokenize(answer)
@@ -1339,10 +1340,10 @@ class M4CAnswerProcessor(BaseProcessor):
 
         # ================================ DCR start ================================ #
         txt2idx_dict = defaultdict(list)
-        # TO DO : get item['txt_tokens']
-        for idx, token in enumerate(item["question_tokens"]):
+        for idx, token in enumerate(item["question_tokens"][:20]):
             txt2idx_dict[token].append(idx)
         # ================================ DCR end ================================ #
+
 
         answer_dec_inds = [
             self.match_answer_to_vocab_ocr_seq(

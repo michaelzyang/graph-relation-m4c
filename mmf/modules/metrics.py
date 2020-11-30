@@ -618,7 +618,7 @@ class TextVQAAccuracy(BaseMetric):
         import mmf.utils.m4c_evaluators as evaluators
 
         self.evaluator = evaluators.TextVQAAccuracyEvaluator()
-        self.required_params = ["scores", "answers", "context_tokens"]
+        self.required_params = ["scores", "answers", "context_tokens", "question_tokens"]
         self.gt_key = "answers"
 
     def calculate(self, sample_list, model_output, *args, **kwargs):
@@ -627,6 +627,11 @@ class TextVQAAccuracy(BaseMetric):
         batch_size = sample_list.context_tokens.size(0)
         pred_answers = model_output["scores"].argmax(dim=-1)
         context_tokens = sample_list.context_tokens.cpu().numpy()
+
+        # ================================ AA start ================================ #
+        question_tokens = sample_list.question_tokens.cpu().numpy()
+        # ================================ AA end ================================ #
+
         answers = sample_list.get(self.gt_key).cpu().numpy()
         answer_space_size = answer_processor.get_true_vocab_size()
 
@@ -637,15 +642,18 @@ class TextVQAAccuracy(BaseMetric):
         predictions = []
         from mmf.utils.distributed import byte_tensor_to_object
         from mmf.utils.text import word_tokenize
-
         for idx in range(batch_size):
             tokens = byte_tensor_to_object(context_tokens[idx])
+            # ================================ AA start ================================ #
+            q_tokens = byte_tensor_to_object(question_tokens[idx])
+            # ================================ AA end ================================ #
+
             answer_words = []
             for answer_id in pred_answers[idx].tolist():
             # ================================ AA start ================================ #
                 if answer_id >= answer_space_size + ocr_space_size:
                     answer_id -= (answer_space_size + ocr_space_size)
-                    answer_words.append(word_tokenize(tokens[answer_id]))
+                    answer_words.append(word_tokenize(q_tokens[answer_id]))
             # ================================ AA end ================================ #
                 elif answer_id >= answer_space_size:
                     answer_id -= answer_space_size

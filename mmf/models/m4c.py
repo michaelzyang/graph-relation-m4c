@@ -540,7 +540,7 @@ class PrevPredEmbeddings(nn.Module):
         ans_num = ans_emb.size(0)
 
         # ================================ AA start ================================ #
-        txt_ans_num = ans_num + ocr_emb.size(0)
+        txt_ans_num = ans_num + ocr_emb.size(1)
         # ================================ AA end ================================ #
         # apply layer normalization to both answer embedding and OCR embedding
         # before concatenation, so that they have the same scale

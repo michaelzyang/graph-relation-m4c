@@ -47,24 +47,31 @@ class TextVQADataset(MMFDataset):
         answer_space_size = answer_processor.get_true_vocab_size()
         
         # ================================ DCR start ================================ #
-        # TO DO: Don't hardcode (had to because of Aditya)
+        # TO DO: Don't hardcode 
         ocr_space_size = 50
         # ================================ DCR end ================================ #
 
         image_ids = report.image_id.cpu().numpy()
         context_tokens = report.context_tokens.cpu().numpy()
+
+        # ================================ AA start ================================ #
+        question_tokens = report.question_tokens.cpu().numpy()
+        # ================================ AA end ================================ #
+        
         predictions = []
         for idx, question_id in enumerate(report.question_id):
             # collect VQA answers
             image_id = byte_tensor_to_object(image_ids[idx])
             tokens = byte_tensor_to_object(context_tokens[idx])
+
+            q_tokens = byte_tensor_to_object(question_tokens[idx])
             answer_words = []
             pred_source = []
             for answer_id in pred_answers[idx].tolist():
         # ================================ DCR start ================================ #
                 if answer_id >= answer_space_size + ocr_space_size:
                     answer_id -= (answer_space_size + ocr_space_size)
-                    answer_words.append(word_tokenize(tokens[answer_id]))
+                    answer_words.append(word_tokenize(q_tokens[answer_id]))
                     pred_source.append("QUESTION")
         # ================================ DCR end ================================ #
                 elif answer_id >= answer_space_size:
@@ -140,6 +147,10 @@ class TextVQADataset(MMFDataset):
 
         if "question_tokens" in sample_info:
             text_processor_args["tokens"] = sample_info["question_tokens"]
+            # ================================ AA start ================================ #
+            # add question tokens in sample/batch loaded from dataloader
+            sample.question_tokens = object_to_byte_tensor(self.context_processor({"tokens": sample_info["question_tokens"]})["tokens"][:20])
+            # ================================ AA end ================================ #
 
         processed_question = self.text_processor(text_processor_args)
 
