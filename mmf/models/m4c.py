@@ -196,6 +196,9 @@ class M4C(BaseModel):
         obj_fc6 = sample_list.image_feature_0
         obj_fc7 = self.obj_faster_rcnn_fc7(obj_fc6)
         obj_fc7 = F.normalize(obj_fc7, dim=-1)
+        # ================================ MZ start ================================ #
+        fwd_results["obj_fc7"] = obj_fc7
+        # ================================= MZ end ================================= #
 
         obj_feat = obj_fc7
         obj_bbox = sample_list.obj_bbox_coordinates
@@ -224,6 +227,9 @@ class M4C(BaseModel):
         ocr_fc6 = sample_list.image_feature_1[:, : ocr_fasttext.size(1), :]
         ocr_fc7 = self.ocr_faster_rcnn_fc7(ocr_fc6)
         ocr_fc7 = F.normalize(ocr_fc7, dim=-1)
+        # ================================ MZ start ================================ #
+        fwd_results["ocr_fc7"] = ocr_fc7
+        # ================================= MZ end ================================= #
 
         # OCR order vectors (legacy from LoRRA model; set to all zeros)
         # TODO remove OCR order vectors; they are not needed
@@ -260,6 +266,14 @@ class M4C(BaseModel):
         )
         fwd_results["txt_emb"] = self.text_bert_out_linear(text_bert_out)
 
+        # ================================ MZ start ================================ #
+        edge_feats = torch.cat([
+            self._get_appearance_cosine_similarity(fwd_results['obj_fc7'], fwd_results['ocr_fc7']),
+            self._get_spatial_category_feats(sample_list.obj_bbox_coordinates, sample_list.ocr_bbox_coordinates),
+            self._get_spatial_translation_feats(sample_list.obj_bbox_coordinates, sample_list.ocr_bbox_coordinates),
+            self._get_modality_pair_labels(sample_list)
+        ], dim=3)  # (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 17)
+        # ================================= MZ end ================================= #
         mmt_results = self.mmt(
             txt_emb=fwd_results["txt_emb"],
             txt_mask=fwd_results["txt_mask"],
@@ -269,6 +283,9 @@ class M4C(BaseModel):
             ocr_mask=fwd_results["ocr_mask"],
             fixed_ans_emb=self.classifier.module.weight,
             prev_inds=fwd_results["prev_inds"],
+            # ================================ MZ start ================================ #
+            edge_feats=edge_feats,
+            # ================================= MZ end ================================= #
         )
         fwd_results.update(mmt_results)
 
@@ -347,6 +364,116 @@ class M4C(BaseModel):
         answer_processor = OmegaConf.create({"BOS_IDX": 1})
         registry.register(f"{dataset}_answer_processor", answer_processor)
 
+    # ================================ MZ start ================================ #
+    def _get_appearance_cosine_similarity(self, obj_appearance_feats, ocr_appearance_feats):
+        """
+        From the Faster R-CNN d-dimensional appearance features of each visual and ocr object,
+        creates the pairwise cosine similarity feature
+
+        :param obj_appearance_feats: torch.Tensor of shape (batch_size, obj_max_num, d)
+        :param ocr_appearance_feats: torch.Tensor of shape (batch_size, ocr_max_num, d)
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 1)
+        """
+
+        # Initialize feature
+        batch_size, obj_max_num = obj_appearance_feats.shape[0:2]
+        ocr_max_num = ocr_appearance_feats.shape[1]
+        appearance_cosine_similarity = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 1,
+                                                   dtype=torch.float32, device=obj_appearance_feats.device)
+
+        # Compute feature
+        # TODO
+
+        return appearance_cosine_similarity
+
+    def _get_spatial_category_feats(self, obj_bbox, ocr_bbox):
+        """
+        From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+        creates pairwise features representing the spatial categories which are dummy variables for the 12 categories
+        [is_ESE, is_SSE, is_SSW, is_WSW, is_WNW, is_NNW, is_NNE, is_ENE, is_overlap, is_in, is_contains], where
+        the default category is the is_self category and is_ESE means non-overlapping in the East Southeast direction.
+
+        :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :param ocr_bbox: torch.Tensor of shape (batch_size, ocr_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 11)
+        """
+        # Initialize feature
+        batch_size, obj_max_num = obj_bbox.shape[0:2]
+        ocr_max_num = ocr_bbox.shape[1]
+        spatial_category_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 11,
+                                             dtype=torch.float32, device=obj_bbox.device)
+
+        # Compute feature
+        # TODO
+
+        return spatial_category_feats
+
+    def _get_spatial_translation_feats(self, obj_bbox, ocr_bbox):
+        """
+        From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+        creates pairwise features representing spatial translation in the x and y directions
+        [x_diff, y_diff] and -0.5 < x_diff < 0.5 and -0.5 < y_diff < 0.5
+
+        :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :param ocr_bbox: torch.Tensor of shape (batch_size, ocr_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2)
+        """
+
+        # Initialize feature
+        batch_size, obj_max_num = obj_bbox.shape[0:2]
+        ocr_max_num = ocr_bbox.shape[1]
+        spatial_translation_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2,
+                                                dtype=torch.float32, device=obj_bbox.device)
+
+        # Compute feature
+        # TODO
+
+        return spatial_translation_feats
+
+    def _get_modality_pair_labels(self, sample_list):
+        """
+        From the number of visual and OCR objects, creates the modality pair labels which are dummy variables for
+        the 4 categories [obj_to_obj, obj_to_ocr, ocr_to_obj] and the default category is the ocr_to_ocr category.
+
+        :param sample_list: the SampleList object with the data of the instances in the batch
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 3)
+        """
+
+        # Initialize feature
+        batch_size = sample_list.image_id.shape[0]
+        obj_nums = sample_list.image_info_0.max_features  # (batch_size,)
+        ocr_nums = sample_list.context_info_0.max_features  # (batch_size,)
+        obj_max_num = sample_list.obj_bbox_coordinates.shape[1]
+        ocr_max_num = sample_list.ocr_bbox_coordinates.shape[1]
+        modality_pair_labels = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 3,
+                                           dtype=torch.float32, device=obj_nums.device)
+
+        # Compute feature
+        # TODO
+
+        return modality_pair_labels
+
+    def _get_bbox_centers(self, bbox_feats):
+        """
+        From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+        creates the bbox center features [x, y] and 0.0 <= x_diff <= 1.0 and 0.0 <= y_diff <= 1.0
+
+        :param bbox_feats: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
+                           [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :return: torch.Tensor of shape (batch_size, num_objs, 2)
+        """
+
+        x = (bbox_feats[:, :, 0] + bbox_feats[:, :, 2]) / 2
+        y = (bbox_feats[:, :, 1] + bbox_feats[:, :, 3]) / 2
+        bbox_centers = torch.cat([x.unsqueeze(2), y.unsqueeze(2)], dim=2)
+
+        return bbox_centers
+    # ================================= MZ end ================================= #
+
 
 class TextBert(BertPreTrainedModel):
     def __init__(self, config):
@@ -391,6 +518,9 @@ class MMT(BertPreTrainedModel):
         ocr_mask,
         fixed_ans_emb,
         prev_inds,
+        # ================================ MZ start ================================ #
+        edge_feats,
+        # ================================= MZ end ================================= #
     ):
 
         # build embeddings for predictions in previous decoding steps
@@ -441,7 +571,10 @@ class MMT(BertPreTrainedModel):
         head_mask = [None] * self.config.num_hidden_layers
 
         encoder_outputs = self.encoder(
-            encoder_inputs, extended_attention_mask, head_mask=head_mask
+            # encoder_inputs, extended_attention_mask, head_mask=head_mask
+            # ================================ MZ start ================================ #
+            encoder_inputs, edge_feats, extended_attention_mask, head_mask=head_mask
+            # ================================= MZ end ================================= #
         )
 
         mmt_seq_output = encoder_outputs[0]
