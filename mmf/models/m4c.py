@@ -424,14 +424,19 @@ class M4C(BaseModel):
         :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2)
         """
 
-        # Initialize feature
-        batch_size, obj_max_num = obj_bbox.shape[0:2]
+        obj_max_num = obj_bbox.shape[1]
         ocr_max_num = ocr_bbox.shape[1]
-        spatial_translation_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2,
-                                                dtype=torch.float32, device=obj_bbox.device)
+        n = obj_max_num + ocr_max_num
 
-        # Compute feature
-        # TODO
+        # Compute centers
+        obj_bbox_center = self._get_bbox_centers(obj_bbox)  # (batch_size, obj_max_num, 2)
+        ocr_bbox_center = self._get_bbox_centers(ocr_bbox)  # (batch_size, ocr_max_num, 2)
+        bbox_center = torch.cat([obj_bbox_center, ocr_bbox_center], dim=1)  # (batch_size, n, 2)
+
+        # Compute x_diff and y_diff by broadcasting rows and columns for self and other respectively
+        self_center = bbox_center.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 2) rows broadcasted
+        other_center = torch.transpose(self_center, 1, 2)
+        spatial_translation_feats = other_center - self_center
 
         return spatial_translation_feats
 
