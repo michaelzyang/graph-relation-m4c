@@ -378,8 +378,9 @@ class M4C(BaseModel):
         # Initialize feature
         batch_size, obj_max_num = obj_appearance_feats.shape[0:2]
         ocr_max_num = ocr_appearance_feats.shape[1]
-        appearance_cosine_similarity = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 1,
-                                                   dtype=torch.float32, device=obj_appearance_feats.device)
+        n = obj_max_num + ocr_max_num
+        appearance_cosine_similarity = torch.zeros([batch_size, n, n, 1], dtype=torch.float32,
+                                                   device=obj_appearance_feats.device)
 
         # Compute feature
         # TODO
@@ -402,8 +403,8 @@ class M4C(BaseModel):
         # Initialize feature
         batch_size, obj_max_num = obj_bbox.shape[0:2]
         ocr_max_num = ocr_bbox.shape[1]
-        spatial_category_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 11,
-                                             dtype=torch.float32, device=obj_bbox.device)
+        n = obj_max_num + ocr_max_num
+        spatial_category_feats = torch.zeros([batch_size, n, n, 11], dtype=torch.float32, device=obj_bbox.device)
 
         # Compute feature
         # TODO
@@ -426,8 +427,8 @@ class M4C(BaseModel):
         # Initialize feature
         batch_size, obj_max_num = obj_bbox.shape[0:2]
         ocr_max_num = ocr_bbox.shape[1]
-        spatial_translation_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2,
-                                                dtype=torch.float32, device=obj_bbox.device)
+        n = obj_max_num + ocr_max_num
+        spatial_translation_feats = torch.zeros([batch_size, n, n, 2], dtype=torch.float32, device=obj_bbox.device)
 
         # Compute feature
         # TODO
@@ -449,11 +450,24 @@ class M4C(BaseModel):
         ocr_nums = sample_list.context_info_0.max_features  # (batch_size,)
         obj_max_num = sample_list.obj_bbox_coordinates.shape[1]
         ocr_max_num = sample_list.ocr_bbox_coordinates.shape[1]
-        modality_pair_labels = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 3,
-                                           dtype=torch.float32, device=obj_nums.device)
+        n = obj_max_num + ocr_max_num
+        modality_pair_labels = torch.zeros([batch_size, n, n, 3], dtype=torch.float32, device=obj_nums.device)
 
-        # Compute feature
-        # TODO
+        # Compute feature per data instance
+        arange = torch.arange(0, n, device=obj_nums.device)  # (n,)
+        is_self_obj = arange.lt(obj_max_num).unsqueeze(1).expand(-1, n)  # (n, n) broadcasted columns
+        is_other_obj = arange.lt(obj_max_num).unsqueeze(0).expand(n, -1)  # (n, n) broadcasted rows
+        obj_obj = is_self_obj & is_other_obj  # (n, n)
+        obj_ocr = is_self_obj & ~is_other_obj  # (n, n)
+        ocr_obj = ~is_self_obj & is_other_obj  # (n, n)
+
+        # Stack and broadcast (labels are the same for all data instances in the batch)
+        modality_pair_labels = torch.stack([
+            obj_obj,
+            obj_ocr,
+            ocr_obj
+        ], dim=-1)  # (n, n, 3)
+        modality_pair_labels = modality_pair_labels.unsqueeze(0).expand(batch_size, -1, -1, -1)  # (batch_size, n, n, 3)
 
         return modality_pair_labels
 
@@ -462,7 +476,7 @@ class M4C(BaseModel):
         From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
         creates the bbox center features [x, y] and 0.0 <= x_diff <= 1.0 and 0.0 <= y_diff <= 1.0
 
-        :param bbox_feats: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
+        :param bbox_feats: torch.Tensor of shape (batch_size, num_objs, 4), where the 4 bbox features are
                            [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
         :return: torch.Tensor of shape (batch_size, num_objs, 2)
         """
