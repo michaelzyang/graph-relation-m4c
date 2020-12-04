@@ -427,8 +427,8 @@ class M4C(BaseModel):
         # Initialize feature
         batch_size, obj_max_num = obj_bbox.shape[0:2]
         ocr_max_num = ocr_bbox.shape[1]
-        n = obj_max_num + ocr_max_num
-        spatial_translation_feats = torch.zeros([batch_size, n, n, 2], dtype=torch.float32, device=obj_bbox.device)
+        spatial_translation_feats = torch.zeros(batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 2,
+                                                dtype=torch.float32, device=obj_bbox.device)
 
         # Compute feature
         # TODO
@@ -444,17 +444,13 @@ class M4C(BaseModel):
         :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 3)
         """
 
-        # Initialize feature
         batch_size = sample_list.image_id.shape[0]
-        obj_nums = sample_list.image_info_0.max_features  # (batch_size,)
-        ocr_nums = sample_list.context_info_0.max_features  # (batch_size,)
         obj_max_num = sample_list.obj_bbox_coordinates.shape[1]
         ocr_max_num = sample_list.ocr_bbox_coordinates.shape[1]
         n = obj_max_num + ocr_max_num
-        modality_pair_labels = torch.zeros([batch_size, n, n, 3], dtype=torch.float32, device=obj_nums.device)
 
         # Compute feature per data instance
-        arange = torch.arange(0, n, device=obj_nums.device)  # (n,)
+        arange = torch.arange(0, n, device=sample_list.image_info_0.max_features.device)  # (n,)
         is_self_obj = arange.lt(obj_max_num).unsqueeze(1).expand(-1, n)  # (n, n) broadcasted columns
         is_other_obj = arange.lt(obj_max_num).unsqueeze(0).expand(n, -1)  # (n, n) broadcasted rows
         obj_obj = is_self_obj & is_other_obj  # (n, n)
