@@ -493,7 +493,7 @@ class M4C(BaseModel):
         """
         From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
         creates pairwise features representing spatial translation in the x and y directions
-        [x_diff, y_diff] and -0.5 < x_diff < 0.5 and -0.5 < y_diff < 0.5
+        [x_diff, y_diff] and -1.0 < x_diff < 1.0 and -1.0 < y_diff < 1.0
 
         :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
                          [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
@@ -505,11 +505,6 @@ class M4C(BaseModel):
         obj_max_num = obj_bbox.shape[1]
         ocr_max_num = ocr_bbox.shape[1]
         n = obj_max_num + ocr_max_num
-        bbox = torch.cat([obj_bbox, ocr_bbox], dim=1)  # (batch_size, n, 4)
-
-        # Broadcast rows and columns for self and other respectively
-        self_bbox = bbox.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 4) rows broadcasted
-        other_bbox = torch.transpose(self_bbox, 1, 2)
 
         # Compute centers
         obj_bbox_center = self._get_bbox_centers(obj_bbox)  # (batch_size, obj_max_num, 2)
