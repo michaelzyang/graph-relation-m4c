@@ -400,7 +400,7 @@ class M4C(BaseModel):
                          [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
         :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 11)
         """
-        # Initialize feature
+
         batch_size, obj_max_num = obj_bbox.shape[0:2]
         ocr_max_num = ocr_bbox.shape[1]
         n = obj_max_num + ocr_max_num
@@ -487,6 +487,38 @@ class M4C(BaseModel):
         bbox_centers = torch.cat([x.unsqueeze(2), y.unsqueeze(2)], dim=2)
 
         return bbox_centers
+
+    def _are_overlapping(self, obj_bbox, ocr_bbox):
+        """
+        From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+        creates pairwise binary label representing whether there is non-zero area overlap between the bboxes.
+
+        :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :param ocr_bbox: torch.Tensor of shape (batch_size, ocr_max_num, 4), where the 4 bbox features are
+                         [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num)
+        """
+
+        obj_max_num = obj_bbox.shape[1]
+        ocr_max_num = ocr_bbox.shape[1]
+        n = obj_max_num + ocr_max_num
+        bbox = torch.cat([obj_bbox, ocr_bbox], dim=1)  # (batch_size, n, 4)
+
+        # Broadcast rows and columns for self and other respectively
+        self_bbox = bbox.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 4) rows broadcasted
+        other_bbox = torch.transpose(self_bbox, 1, 2)
+
+        # NO overlap in the x-direction if
+        # the self object's x_min >= other object's x_max OR the self object's x_max <= other object's x_min
+        are_x_overlapping = ~(self_bbox[:, :, :, 0] >= other_bbox[:, :, :, 2] |
+                               self_bbox[:, :, :, 2] <= other_bbox[:, :, :, 0])
+        are_y_overlapping = ~(self_bbox[:, :, :, 1] >= other_bbox[:, :, :, 3] |
+                               self_bbox[:, :, :, 3] <= other_bbox[:, :, :, 1])
+
+        are_overlapping = are_x_overlapping & are_y_overlapping  # (batch_size, n, n)
+        return are_overlapping
+
     # ================================= MZ end ================================= #
 
 
