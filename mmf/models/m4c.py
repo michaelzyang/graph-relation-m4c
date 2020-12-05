@@ -272,7 +272,7 @@ class M4C(BaseModel):
             self._get_spatial_category_feats(sample_list.obj_bbox_coordinates, sample_list.ocr_bbox_coordinates),
             self._get_spatial_translation_feats(sample_list.obj_bbox_coordinates, sample_list.ocr_bbox_coordinates),
             self._get_modality_pair_labels(sample_list)
-        ], dim=3)  # (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 17)
+        ], dim=3)  # (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 10)
         # ================================= MZ end ================================= #
         mmt_results = self.mmt(
             txt_emb=fwd_results["txt_emb"],
@@ -390,9 +390,8 @@ class M4C(BaseModel):
     def _get_spatial_category_feats(self, obj_bbox, ocr_bbox):
         """
         From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
-        creates pairwise features representing the spatial categories which are dummy variables for the 12 categories
-        [is_ESE, is_SSE, is_SSW, is_WSW, is_WNW, is_NNW, is_NNE, is_ENE, is_overlap, is_in, is_contains], where
-        the default category is the is_self category and is_ESE means non-overlapping in the East Southeast direction.
+        creates pairwise features representing the spatial categories which are dummy variables for the 5 categories
+        [is_self, is_contains, is_in, is_overlap], where the default category is no bbox area overlap.
 
         :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
                          [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
@@ -421,7 +420,49 @@ class M4C(BaseModel):
                                   self_bbox[:, :, :, 3] <= other_bbox[:, :, :, 1])
 
             are_overlapping = are_x_overlapping & are_y_overlapping  # (batch_size, n, n)
-            return are_overlapping
+            return are_overlapping.type(torch.float32)
+
+        def _is_contains(self_bbox, other_bbox):
+            """
+            From the broadcasted Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+            creates pairwise binary label representing whether the area of the other object is
+            entirely contained within the self object.
+
+            :param self_bbox: torch.Tensor of shape (batch_size, n, n, 4), where the 4 bbox features are
+                              [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+            :param other_bbox: torch.Tensor of shape (batch_size, n, n, 4), where the 4 bbox features are
+                               [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+            :return: torch.Tensor of shape (batch_size, n, n)
+            """
+
+            is_x_contains = (self_bbox[:, :, :, 2] > other_bbox[:, :, :, 2] &
+                             self_bbox[:, :, :, 0] < other_bbox[:, :, :, 0])
+            is_y_contains = (self_bbox[:, :, :, 3] > other_bbox[:, :, :, 3] &
+                             self_bbox[:, :, :, 1] < other_bbox[:, :, :, 1])
+
+            is_contains = is_x_contains & is_y_contains  # (batch_size, n, n)
+            return is_contains.type(torch.float32)
+
+        def _is_in(self_bbox, other_bbox):
+            """
+            From the broadcasted Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
+            creates pairwise binary label representing whether the area of the self object is
+            entirely contained within the other object.
+
+            :param self_bbox: torch.Tensor of shape (batch_size, n, n, 4), where the 4 bbox features are
+                              [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+            :param other_bbox: torch.Tensor of shape (batch_size, n, n, 4), where the 4 bbox features are
+                               [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
+            :return: torch.Tensor of shape (batch_size, n, n)
+            """
+
+            is_x_in = (self_bbox[:, :, :, 2] < other_bbox[:, :, :, 2] &
+                       self_bbox[:, :, :, 0] > other_bbox[:, :, :, 0])
+            is_y_in = (self_bbox[:, :, :, 3] < other_bbox[:, :, :, 3] &
+                       self_bbox[:, :, :, 1] > other_bbox[:, :, :, 1])
+
+            is_in = is_x_in & is_y_in  # (batch_size, n, n)
+            return is_in.type(torch.float32)
 
         batch_size, obj_max_num = obj_bbox.shape[0:2]
         ocr_max_num = ocr_bbox.shape[1]
@@ -432,9 +473,19 @@ class M4C(BaseModel):
         self_bbox = bbox.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 4) rows broadcasted
         other_bbox = torch.transpose(self_bbox, 1, 2)
 
-        # Compute feature
-        are_overlapping = _are_overlapping(self_bbox, other_bbox)
-        # TODO
+        # Compute features
+        is_self = torch.eye(n, dtype=torch.float32, device=obj_bbox).unsqueeze(0).expand(batch_size, -1, -1)
+        is_contains = _is_contains(self_bbox, other_bbox)
+        is_in = _is_in(self_bbox, other_bbox)
+        is_overlap = ~(is_self | is_contains | is_in) & _are_overlapping(self_bbox, other_bbox)
+
+        # Stack
+        spatial_category_feats = torch.stack([
+            is_self,
+            is_contains,
+            is_in,
+            is_overlap
+        ], dim=-1)  # (batch_size, n, n, 4)
 
         return spatial_category_feats
 
