@@ -414,10 +414,10 @@ class M4C(BaseModel):
 
             # NO overlap in the x-direction if
             # the self object's x_min >= other object's x_max OR the self object's x_max <= other object's x_min
-            are_x_overlapping = ~(self_bbox[:, :, :, 0] >= other_bbox[:, :, :, 2] |
-                                  self_bbox[:, :, :, 2] <= other_bbox[:, :, :, 0])
-            are_y_overlapping = ~(self_bbox[:, :, :, 1] >= other_bbox[:, :, :, 3] |
-                                  self_bbox[:, :, :, 3] <= other_bbox[:, :, :, 1])
+            are_x_overlapping = ~((self_bbox[:, :, :, 0] >= other_bbox[:, :, :, 2]) |
+                                  (self_bbox[:, :, :, 2] <= other_bbox[:, :, :, 0]))
+            are_y_overlapping = ~((self_bbox[:, :, :, 1] >= other_bbox[:, :, :, 3]) |
+                                  (self_bbox[:, :, :, 3] <= other_bbox[:, :, :, 1]))
 
             are_overlapping = are_x_overlapping & are_y_overlapping  # (batch_size, n, n)
             return are_overlapping.type(torch.float32)
@@ -435,10 +435,10 @@ class M4C(BaseModel):
             :return: torch.Tensor of shape (batch_size, n, n)
             """
 
-            is_x_contains = (self_bbox[:, :, :, 2] > other_bbox[:, :, :, 2] &
-                             self_bbox[:, :, :, 0] < other_bbox[:, :, :, 0])
-            is_y_contains = (self_bbox[:, :, :, 3] > other_bbox[:, :, :, 3] &
-                             self_bbox[:, :, :, 1] < other_bbox[:, :, :, 1])
+            is_x_contains = ((self_bbox[:, :, :, 2] > other_bbox[:, :, :, 2]) &
+                             (self_bbox[:, :, :, 0] < other_bbox[:, :, :, 0]))
+            is_y_contains = ((self_bbox[:, :, :, 3] > other_bbox[:, :, :, 3]) &
+                             (self_bbox[:, :, :, 1] < other_bbox[:, :, :, 1]))
 
             is_contains = is_x_contains & is_y_contains  # (batch_size, n, n)
             return is_contains.type(torch.float32)
@@ -456,10 +456,10 @@ class M4C(BaseModel):
             :return: torch.Tensor of shape (batch_size, n, n)
             """
 
-            is_x_in = (self_bbox[:, :, :, 2] < other_bbox[:, :, :, 2] &
-                       self_bbox[:, :, :, 0] > other_bbox[:, :, :, 0])
-            is_y_in = (self_bbox[:, :, :, 3] < other_bbox[:, :, :, 3] &
-                       self_bbox[:, :, :, 1] > other_bbox[:, :, :, 1])
+            is_x_in = ((self_bbox[:, :, :, 2] < other_bbox[:, :, :, 2]) &
+                       (self_bbox[:, :, :, 0] > other_bbox[:, :, :, 0]))
+            is_y_in = ((self_bbox[:, :, :, 3] < other_bbox[:, :, :, 3]) &
+                       (self_bbox[:, :, :, 1] > other_bbox[:, :, :, 1]))
 
             is_in = is_x_in & is_y_in  # (batch_size, n, n)
             return is_in.type(torch.float32)
@@ -474,7 +474,7 @@ class M4C(BaseModel):
         other_bbox = torch.transpose(self_bbox, 1, 2)
 
         # Compute features
-        is_self = torch.eye(n, dtype=torch.float32, device=obj_bbox).unsqueeze(0).expand(batch_size, -1, -1)
+        is_self = torch.eye(n, dtype=torch.float32, device=obj_bbox.device).unsqueeze(0).expand(batch_size, -1, -1)
         is_contains = _is_contains(self_bbox, other_bbox)
         is_in = _is_in(self_bbox, other_bbox)
         is_overlap = ~(is_self | is_contains | is_in) & _are_overlapping(self_bbox, other_bbox)
