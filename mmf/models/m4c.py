@@ -384,17 +384,17 @@ class M4C(BaseModel):
 
         # ZK
         obj_total_num = obj_max_num+ocr_max_num
-        
+
         both_appearance_feats = torch.cat((obj_appearance_feats,ocr_appearance_feats),dim=1)
 
         # Broadcast rows and columns for self and other respectively
         self_feats = both_appearance_feats.unsqueeze(2).expand(-1,-1,obj_total_num,-1)  # (batch_size, n, n, 4) rows broadcasted
         other_feats = torch.transpose(self_feats,1,2) # (batch_size, n, n, 4) cols broadcasted
-        
+
         cos_fn =  torch.nn.CosineSimilarity(dim=3, eps=1e-6)
 
         appearance_cosine_similarity = cos_fn(self_feats,other_feats)
-        
+
         # Going from 2x3x3 -> 2x3x3x1
         appearance_cosine_similarity = torch.unsqueeze(appearance_cosine_similarity,-1)
 
@@ -403,14 +403,14 @@ class M4C(BaseModel):
     def _get_spatial_category_feats(self, obj_bbox, ocr_bbox):
         """
         From the Faster R-CNN 4-dimensional bbox features of each visual and ocr object,
-        creates pairwise features representing the spatial categories which are dummy variables for the 5 categories
-        [is_self, is_contains, is_in, is_overlap], where the default category is no bbox area overlap.
+        creates pairwise one-hot feature representing 5 spatial categories
+        [is_self, is_contains, is_in, is_overlap, not_overlap].
 
         :param obj_bbox: torch.Tensor of shape (batch_size, obj_max_num, 4), where the 4 bbox features are
                          [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
         :param ocr_bbox: torch.Tensor of shape (batch_size, ocr_max_num, 4), where the 4 bbox features are
                          [x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height]
-        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 11)
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 5)
         """
 
         def _are_overlapping(self_bbox, other_bbox):
@@ -487,18 +487,21 @@ class M4C(BaseModel):
         other_bbox = torch.transpose(self_bbox, 1, 2)
 
         # Compute features
+        are_overlapping = _are_overlapping(self_bbox, other_bbox)
         is_self = torch.eye(n, dtype=torch.bool, device=obj_bbox.device).unsqueeze(0).expand(batch_size, -1, -1)
         is_contains = _is_contains(self_bbox, other_bbox)
         is_in = _is_in(self_bbox, other_bbox)
-        is_overlap = ~(is_self | is_contains | is_in) & _are_overlapping(self_bbox, other_bbox)
+        is_overlap = ~(is_self | is_contains | is_in) & are_overlapping
+        not_overlap = ~are_overlapping
 
         # Stack
         spatial_category_feats = torch.stack([
             is_self,
             is_contains,
             is_in,
-            is_overlap
-        ], dim=-1).type(torch.float32)  # (batch_size, n, n, 4)
+            is_overlap,
+            not_overlap,
+        ], dim=-1).type(torch.float32)  # (batch_size, n, n, 5)
 
         return spatial_category_feats
 
@@ -533,11 +536,11 @@ class M4C(BaseModel):
 
     def _get_modality_pair_labels(self, sample_list):
         """
-        From the number of visual and OCR objects, creates the modality pair labels which are dummy variables for
-        the 4 categories [obj_to_obj, obj_to_ocr, ocr_to_obj] and the default category is the ocr_to_ocr category.
+        From the number of visual and OCR objects, creates pairwise one-hot feature representing 4 modality pair labels
+        [obj_to_obj, obj_to_ocr, ocr_to_obj, ocr_to_ocr].
 
         :param sample_list: the SampleList object with the data of the instances in the batch
-        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 3)
+        :return: torch.Tensor of shape (batch_size, obj_max_num + ocr_max_num, obj_max_num + ocr_max_num, 4)
         """
 
         batch_size = sample_list.image_id.shape[0]
@@ -552,14 +555,16 @@ class M4C(BaseModel):
         obj_obj = is_self_obj & is_other_obj  # (n, n)
         obj_ocr = is_self_obj & ~is_other_obj  # (n, n)
         ocr_obj = ~is_self_obj & is_other_obj  # (n, n)
+        ocr_ocr = ~is_self_obj & ~is_other_obj  # (n, n)
 
         # Stack and broadcast (labels are the same for all data instances in the batch)
         modality_pair_labels = torch.stack([
             obj_obj,
             obj_ocr,
-            ocr_obj
-        ], dim=-1)  # (n, n, 3)
-        modality_pair_labels = modality_pair_labels.unsqueeze(0).expand(batch_size, -1, -1, -1)  # (batch_size, n, n, 3)
+            ocr_obj,
+            ocr_ocr,
+        ], dim=-1).type(torch.float32)  # (n, n, 4)
+        modality_pair_labels = modality_pair_labels.unsqueeze(0).expand(batch_size, -1, -1, -1)  # (batch_size, n, n, 4)
 
         return modality_pair_labels
 
