@@ -382,8 +382,21 @@ class M4C(BaseModel):
         appearance_cosine_similarity = torch.zeros([batch_size, n, n, 1], dtype=torch.float32,
                                                    device=obj_appearance_feats.device)
 
-        # Compute feature
-        # TODO
+        # ZK
+        obj_total_num = obj_max_num+ocr_max_num
+        
+        both_appearance_feats = torch.cat((obj_appearance_feats,ocr_appearance_feats),dim=1)
+
+        # Broadcast rows and columns for self and other respectively
+        self_feats = both_appearance_feats.unsqueeze(2).expand(-1,-1,obj_total_num,-1)  # (batch_size, n, n, 4) rows broadcasted
+        other_feats = torch.transpose(self_feats,1,2) # (batch_size, n, n, 4) cols broadcasted
+        
+        cos_fn =  torch.nn.CosineSimilarity(dim=3, eps=1e-6)
+
+        appearance_cosine_similarity = cos_fn(self_feats,other_feats)
+        
+        # Going from 2x3x3 -> 2x3x3x1
+        appearance_cosine_similarity = torch.unsqueeze(appearance_cosine_similarity,-1)
 
         return appearance_cosine_similarity
 
