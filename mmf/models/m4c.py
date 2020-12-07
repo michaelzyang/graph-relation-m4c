@@ -681,10 +681,17 @@ class MMT(BertPreTrainedModel):
         assert not extended_attention_mask.requires_grad
         head_mask = [None] * self.config.num_hidden_layers
 
+        # ================================ AA start ================================ #
+        # (bs, seq_len, seq_len, edge_feat_dim)
+        edge_feats_masked = torch.zeros(edge_feats.size(0), attention_mask.size(1), attention_mask.size(1), edge_feats,size(2), dtype=torch.float32, device=edge_feats.device)
+        obj_begin = txt_max_num
+        edge_feats_masked[:, obj_begin:ocr_end, obj_begin:ocr_end, :] = edge_feats
+        # ================================ AA end ================================ #        
+
         encoder_outputs = self.encoder(
             # encoder_inputs, extended_attention_mask, head_mask=head_mask
             # ================================ MZ start ================================ #
-            encoder_inputs, edge_feats, extended_attention_mask, head_mask=head_mask
+            encoder_inputs, edge_feats_masked, extended_attention_mask, head_mask=head_mask
             # ================================= MZ end ================================= #
         )
 
