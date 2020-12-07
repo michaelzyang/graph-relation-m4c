@@ -604,7 +604,7 @@ class TextBert(BertPreTrainedModel):
         head_mask = [None] * self.config.num_hidden_layers
 
         encoder_outputs = self.encoder(
-            encoder_inputs, extended_attention_mask, head_mask=head_mask
+            encoder_inputs, None, extended_attention_mask, head_mask=head_mask
         )
         seq_output = encoder_outputs[0]
 
@@ -616,7 +616,7 @@ class MMT(BertPreTrainedModel):
         super().__init__(config)
 
         self.prev_pred_embeddings = PrevPredEmbeddings(config)
-        self.encoder = BertEncoder(config)
+        self.encoder = BertEncoder(config, edge_feats=True)
         self.init_weights()
 
     def forward(
@@ -683,7 +683,7 @@ class MMT(BertPreTrainedModel):
 
         # ================================ AA start ================================ #
         # (bs, seq_len, seq_len, edge_feat_dim)
-        edge_feats_masked = torch.zeros(edge_feats.size(0), attention_mask.size(1), attention_mask.size(1), edge_feats,size(2), dtype=torch.float32, device=edge_feats.device)
+        edge_feats_masked = torch.zeros(edge_feats.size(0), attention_mask.size(1), attention_mask.size(1), edge_feats.size(3), dtype=torch.float32, device=edge_feats.device)
         obj_begin = txt_max_num
         edge_feats_masked[:, obj_begin:ocr_end, obj_begin:ocr_end, :] = edge_feats
         # ================================ AA end ================================ #        
