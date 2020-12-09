@@ -388,8 +388,8 @@ class M4C(BaseModel):
         both_appearance_feats = torch.cat((obj_appearance_feats,ocr_appearance_feats),dim=1)
 
         # Broadcast rows and columns for self and other respectively
-        self_feats = both_appearance_feats.unsqueeze(2).expand(-1,-1,obj_total_num,-1)  # (batch_size, n, n, 4) rows broadcasted
-        other_feats = torch.transpose(self_feats,1,2) # (batch_size, n, n, 4) cols broadcasted
+        self_feats = both_appearance_feats.unsqueeze(2).expand(-1,-1,obj_total_num,-1)  # (batch_size, n, n, 4) broadcasted as columns
+        other_feats = torch.transpose(self_feats,1,2) # (batch_size, n, n, 4)
 
         cos_fn =  torch.nn.CosineSimilarity(dim=3, eps=1e-6)
 
@@ -483,7 +483,7 @@ class M4C(BaseModel):
         bbox = torch.cat([obj_bbox, ocr_bbox], dim=1)  # (batch_size, n, 4)
 
         # Broadcast rows and columns for self and other respectively
-        self_bbox = bbox.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 4) rows broadcasted
+        self_bbox = bbox.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 4) broadcasted as columns
         other_bbox = torch.transpose(self_bbox, 1, 2)
 
         # Compute features
@@ -528,7 +528,7 @@ class M4C(BaseModel):
         bbox_center = torch.cat([obj_bbox_center, ocr_bbox_center], dim=1)  # (batch_size, n, 2)
 
         # Compute x_diff and y_diff by broadcasting rows and columns for self and other respectively
-        self_center = bbox_center.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 2) rows broadcasted
+        self_center = bbox_center.unsqueeze(2).expand(-1, -1, n, -1)  # (batch_size, n, n, 2) broadcasted as columns
         other_center = torch.transpose(self_center, 1, 2)
         spatial_translation_feats = other_center - self_center
 
@@ -550,8 +550,8 @@ class M4C(BaseModel):
 
         # Compute feature per data instance
         arange = torch.arange(0, n, device=sample_list.image_info_0.max_features.device)  # (n,)
-        is_self_obj = arange.lt(obj_max_num).unsqueeze(1).expand(-1, n)  # (n, n) broadcasted columns
-        is_other_obj = arange.lt(obj_max_num).unsqueeze(0).expand(n, -1)  # (n, n) broadcasted rows
+        is_self_obj = arange.lt(obj_max_num).unsqueeze(1).expand(-1, n)  # (n, n) broadcasted as columns
+        is_other_obj = arange.lt(obj_max_num).unsqueeze(0).expand(n, -1)  # (n, n) broadcasted as rows
         obj_obj = is_self_obj & is_other_obj  # (n, n)
         obj_ocr = is_self_obj & ~is_other_obj  # (n, n)
         ocr_obj = ~is_self_obj & is_other_obj  # (n, n)
@@ -686,7 +686,7 @@ class MMT(BertPreTrainedModel):
         edge_feats_masked = torch.zeros(edge_feats.size(0), attention_mask.size(1), attention_mask.size(1), edge_feats.size(3), dtype=torch.float32, device=edge_feats.device)
         obj_begin = txt_max_num
         edge_feats_masked[:, obj_begin:ocr_end, obj_begin:ocr_end, :] = edge_feats
-        # ================================ AA end ================================ #        
+        # ================================ AA end ================================ #
 
         encoder_outputs = self.encoder(
             # encoder_inputs, extended_attention_mask, head_mask=head_mask
