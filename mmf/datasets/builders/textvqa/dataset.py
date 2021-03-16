@@ -144,9 +144,11 @@ class TextVQADataset(MMFDataset):
 
         # 2. Load object
         # object bounding box information
-        if "obj_normalized_boxes" in sample_info and hasattr(self, "copy_processor"):
+        if "normalized_boxes" in sample_info and hasattr(self, "copy_processor"):
+            # ZK/MY 
+            
             sample.obj_bbox_coordinates = self.copy_processor(
-                {"blob": sample_info["obj_normalized_boxes"]}
+                {"blob": sample_info["normalized_boxes"]}
             )["blob"]
 
         # 3. Load OCR
@@ -166,10 +168,10 @@ class TextVQADataset(MMFDataset):
         if hasattr(self, "ocr_token_processor"):
             ocr_tokens = [
                 self.ocr_token_processor({"text": token})["text"]
-                for token in sample_info["ocr_tokens"]
+                for token in sample_info["google_ocr_tokens_filtered"]
             ]
         else:
-            ocr_tokens = sample_info["ocr_tokens"]
+            ocr_tokens = sample_info["google_ocr_tokens_filtered"]
         # Get FastText embeddings for OCR tokens
         context = self.context_processor({"tokens": ocr_tokens})
         sample.context = context["text"]
@@ -201,11 +203,11 @@ class TextVQADataset(MMFDataset):
             sample.ocr_bbox_coordinates = self.copy_processor(
                 {"blob": sample_info["ocr_normalized_boxes"]}
             )["blob"][:max_len]
-        elif self.use_ocr_info and "ocr_info" in sample_info:
+        elif self.use_ocr_info and "google_ocr_info_filtered" in sample_info:
             # Old imdb format: OCR bounding boxes are computed on-the-fly
             # from ocr_info
             sample.ocr_bbox_coordinates = self.bbox_processor(
-                {"info": sample_info["ocr_info"]}
+                {"info": sample_info["google_ocr_info_filtered"]}
             )["bbox"].coordinates
 
         return sample
@@ -215,7 +217,7 @@ class TextVQADataset(MMFDataset):
         answers = sample_info.get("answers", [])
         answer_processor_arg = {"answers": answers}
 
-        answer_processor_arg["tokens"] = sample.pop("ocr_tokens", [])
+        answer_processor_arg["tokens"] = sample.pop("google_ocr_tokens_filtered", [])
 
         processed_answers = self.answer_processor(answer_processor_arg)
 

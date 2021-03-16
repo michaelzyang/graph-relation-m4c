@@ -10,8 +10,13 @@ import numpy as np
 import torch
 from mmf.utils.file_io import PathManager
 
+##ZK
+import pandas as pd
+import json
+##
 
 def load_feat(feat_path: str, convert_to_tensor: bool = False) -> Any:
+    print("in load_feat with feat_path =", feat_path)
     with PathManager.open(feat_path, "rb") as f:
         if feat_path.endswith("npy"):
             feat = np.load(f, allow_pickle=True)
@@ -196,7 +201,9 @@ class LMDBFeatureReader(PaddedFasterRCNNFeatureReader):
     def __init__(self, max_loc, base_path):
         super().__init__(max_loc)
         self.db_path = base_path
-
+        ##ZK
+        print("\nself.db_path:",self.db_path)
+        ##
         if not PathManager.exists(self.db_path):
             raise RuntimeError(
                 "{} path specified for LMDB features doesn't exists.".format(
@@ -219,26 +226,86 @@ class LMDBFeatureReader(PaddedFasterRCNNFeatureReader):
             self.image_id_indices = {
                 self.image_ids[i]: i for i in range(0, len(self.image_ids))
             }
+        ##ZK ---------------------------------
+#         print("self.db_path:",self.db_path)
+#         print("self.image_ids:",len(self.image_ids),type(self.image_ids))
+#         print("self.image_ids[:5]",self.image_ids[:5])
+#         print("self.image_id_indices:",len(self.image_id_indices),type(self.image_id_indices))
+#         writeDF = pd.DataFrame()
+#         imageIDList = []
+#         for i in self.image_ids:
+#             imageIDList.append(i.decode("utf-8"))
+        
+# #         for i in range(10):
+# #             print(type(imageIDList[i]))
+        
+#         writeDF['image_ids']=imageIDList
+# #         print(self.image_ids[0])
+#         keyList = []
+#         valList = []
+#         for _key , _val in self.image_id_indices.items():
+#             keyList.append(_key.decode("utf-8"))
+#             valList.append(str(_val))
+#         writeDF['keys']=keyList
+#         writeDF['vals']=valList 
+
+#         if "detectron" in self.db_path:
+# #             print("writeDF fileName:","home/ubuntu/graph-relation-m4c/detectron.csv")
+#             writeFileName = "/home/ubuntu/graph-relation-m4c/detectron.csv"
+#         elif "ocr_en_frcn_features" in self.db_path:
+# #             print("writeDF fileName:","home/ubuntu/graph-relation-m4c/ocr_en_frcn_features.csv")
+#             writeFileName = "/home/ubuntu/graph-relation-m4c/ocr_en_frcn_features.csv"
+#         else:
+# #             print("writeDF fileName:","home/ubuntu/graph-relation-m4c/tvqa_trainval_ocr.csv")
+#             writeFileName = "/home/ubuntu/graph-relation-m4c/tvqa_trainval_ocr.csv"
+#         writeDF.to_csv("home/ubuntu/graph-relation-m4c/"+self.db_path[-14:]+".csv")
+#         writeDF.to_csv(writeFileName)
+#         text_file = open("sample.txt", "wt")
+#         n = text_file.write('Welcome to pythonexamples.org')
+#         text_file.close()
+#         exit()
+        # ZK ---------------------------------------
+        
 
     def _load(self, image_file_path):
         if self.env is None:
             self._init_db()
 
         split = os.path.relpath(image_file_path, self.db_path).split(".npy")[0]
-
+#         print("entire split:",os.path.relpath(image_file_path, self.db_path).split(".npy"))
+#         print("split:",split)
         try:
+            str_image_id = split.split("_")[-1]
+#             print("str_image_id:",type(str_image_id),str_image_id)
             image_id = int(split.split("_")[-1])
+#             print("image_id:",image_id)
             # Try fetching to see if it actually exists otherwise fall back to
             # default
             img_id_idx = self.image_id_indices[str(image_id).encode()]
         except (ValueError, KeyError):
             # The image id is complex or involves folder, use it directly
+#             print("we are in the exception")
+#             if "train/" in split:
+            split = split.replace("train/",'')
+#                 print("new split:",split)
             image_id = str(split).encode()
+#             print("image_id in exception:",type(image_id),image_id)
+#             print("trying:",b'train/3ea58be712022c81')
+#             print(self.image_id_indices[b'train/3ea58be712022c81'])
+#             print("self.db_path:",self.db_path,"\n")
+#             print("image_file_path:",type(image_file_path),image_file_path)
             img_id_idx = self.image_id_indices[image_id]
 
         with self.env.begin(write=False, buffers=True) as txn:
             image_info = pickle.loads(txn.get(self.image_ids[img_id_idx]))
-
+        
+        # image_info is a dictionary
+#         print("image_file_path",image_file_path)
+#         print("image_info:",type(image_info),image_info.keys())
+#         print("features:",type(image_info["features"]), image_info['features'].shape)
+#         print("boxes:",type(image_info['boxes']))
+#         print(image_info['boxes'].shape)
+#         raise NotImplementedError()
         return image_info
 
 
