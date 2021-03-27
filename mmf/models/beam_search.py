@@ -100,7 +100,7 @@ class BeamSearch:
             self._decode_size, dim=-1, largest=True, sorted=True
         )
 
-        prev_position = indices / vocab_size
+        prev_position = indices // vocab_size
         new_position = indices % vocab_size
 
         prev_position = prev_position.view(-1) + self._offset_mat.to(
