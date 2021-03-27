@@ -17,7 +17,9 @@ from transformers.modeling_bert import (
     BertEncoder,
     BertPreTrainedModel,
 )
-
+########## AA ##########
+from beam_search import BeamSearch
+########## AA ##########
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,14 @@ class M4C(BaseModel):
         self._build_ocr_encoding()
         self._build_mmt()
         self._build_output()
+
+    ########## AA ##########
+    def set_beam_size(self, beam_size):
+        self.beam_size = beam_size
+        self.bsdecoder = BeamSearch(self.beam_size)
+        logger.info(f"Using beam size: {self.beam_size}")
+    ########## AA ##########
+
 
     def _build_encoder_config(self):
         return OmegaConf.create(
@@ -170,6 +180,20 @@ class M4C(BaseModel):
 
         self.answer_processor = registry.get(self._datasets[0] + "_answer_processor")
 
+    ########## AA ##########
+    def _forward_beam_search(self, sample_list, batch_dict):
+        dec_step_num = sample_list.train_prev_inds.size(1)
+        # Decoding with beam search
+        batch_dict = self.bsdecoder.init_batch(batch_dict)
+
+        for t in range(dec_step_num):
+            self._forward_mmt(batch_dict)
+            self._forward_output(batch_dict)
+            finish, batch_dict, batch_size_t = self.bsdecoder.decode(batch_dict, t)
+            if finish:
+                break
+    ########## AA ##########
+
     def forward(self, sample_list):
         # fwd_results holds intermediate forward pass results
         # TODO possibly replace it with another sample list
@@ -177,7 +201,13 @@ class M4C(BaseModel):
         self._forward_txt_encoding(sample_list, fwd_results)
         self._forward_obj_encoding(sample_list, fwd_results)
         self._forward_ocr_encoding(sample_list, fwd_results)
-        self._forward_mmt_and_output(sample_list, fwd_results)
+
+        ########## AA ##########
+        if self.training:
+            self._forward_mmt_and_output(sample_list, fwd_results)
+        else:
+            self._forward_beam_search(fwd_results)
+        ########## AA ##########
 
         # only keep scores in the forward pass results
         results = {"scores": fwd_results["scores"]}
@@ -253,7 +283,7 @@ class M4C(BaseModel):
         ocr_nums = sample_list.context_info_0.max_features
         fwd_results["ocr_mask"] = _get_mask(ocr_nums, ocr_mmt_in.size(1))
 
-    def _forward_mmt(self, sample_list, fwd_results):
+    def _forward_mmt(self, fwd_results):
         # first forward the text BERT layers
         text_bert_out = self.text_bert(
             txt_inds=fwd_results["txt_inds"], txt_mask=fwd_results["txt_mask"]
@@ -272,7 +302,7 @@ class M4C(BaseModel):
         )
         fwd_results.update(mmt_results)
 
-    def _forward_output(self, sample_list, fwd_results):
+    def _forward_output(self, fwd_results):
         mmt_dec_output = fwd_results["mmt_dec_output"]
         mmt_ocr_output = fwd_results["mmt_ocr_output"]
         ocr_mask = fwd_results["ocr_mask"]
@@ -285,8 +315,8 @@ class M4C(BaseModel):
     def _forward_mmt_and_output(self, sample_list, fwd_results):
         if self.training:
             fwd_results["prev_inds"] = sample_list.train_prev_inds.clone()
-            self._forward_mmt(sample_list, fwd_results)
-            self._forward_output(sample_list, fwd_results)
+            self._forward_mmt(fwd_results)
+            self._forward_output(fwd_results)
         else:
             dec_step_num = sample_list.train_prev_inds.size(1)
             # fill prev_inds with BOS_IDX at index 0, and zeros elsewhere
@@ -295,8 +325,8 @@ class M4C(BaseModel):
 
             # greedy decoding at test time
             for _ in range(dec_step_num):
-                self._forward_mmt(sample_list, fwd_results)
-                self._forward_output(sample_list, fwd_results)
+                self._forward_mmt(fwd_results)
+                self._forward_output(fwd_results)
 
                 # find the highest scoring output (either a fixed vocab
                 # or an OCR), and add it to prev_inds for auto-regressive
