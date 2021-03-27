@@ -18,7 +18,7 @@ from transformers.modeling_bert import (
     BertPreTrainedModel,
 )
 ########## AA ##########
-from beam_search import BeamSearch
+from mmf.models.beam_search import BeamSearch
 ########## AA ##########
 
 logger = logging.getLogger(__name__)
