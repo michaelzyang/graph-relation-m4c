@@ -30,6 +30,7 @@ class M4C(BaseModel):
         super().__init__(config)
         self.mmt_config = BertConfig(**self.config.mmt)
         self._datasets = registry.get("config").datasets.split(",")
+        self.set_beam_size(3)
 
     @classmethod
     def config_path(cls):
