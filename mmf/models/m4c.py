@@ -193,6 +193,8 @@ class M4C(BaseModel):
 
         # Decoding with beam search
         batch_dict = self.bsdecoder.init_batch(batch_dict, self.answer_processor.BOS_IDX)
+        # fill prev_inds with BOS_IDX at index 0, and zeros elsewhere
+        fwd_results["prev_inds"] = torch.zeros_like(sample_list.train_prev_inds)
 
         for t in range(dec_step_num):
             self._forward_mmt(batch_dict)
