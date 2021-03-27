@@ -192,8 +192,8 @@ class M4C(BaseModel):
         batch_dict['pad_ocr_bboxes'] = sample_list.ocr_bbox_coordinates
 
         # fill prev_inds with BOS_IDX at index 0, and zeros elsewhere
-        fwd_results["prev_inds"] = torch.zeros_like(sample_list.train_prev_inds)
-        
+        batch_dict["prev_inds"] = torch.zeros_like(sample_list.train_prev_inds)
+
         # Decoding with beam search
         batch_dict = self.bsdecoder.init_batch(batch_dict, self.answer_processor.BOS_IDX)
 
