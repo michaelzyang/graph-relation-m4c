@@ -56,7 +56,7 @@ class M4C(BaseModel):
     ########## AA ##########
     def set_beam_size(self, beam_size):
         self.beam_size = beam_size
-        self.bsdecoder = BeamSearch(self.beam_size, self.answer_processor.BOS_IDX)
+        self.bsdecoder = BeamSearch(self.beam_size)
         logger.info(f"Using beam size: {self.beam_size}")
     ########## AA ##########
 

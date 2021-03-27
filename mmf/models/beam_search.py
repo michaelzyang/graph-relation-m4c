@@ -1,12 +1,11 @@
 import torch
 
 class BeamSearch:
-    def __init__(self, beam_size, BOS_IDX):
+    def __init__(self, beam_size):
         # Lists to store completed sequences and scores
         self._decode_size = beam_size
         self._complete_seqs = []
         self._complete_seqs_scores = []
-        self._EOS_IDX = BOS_IDX
         self.completed_ids = None
         self.batch_dict_keys = [
             "pad_obj_features",
