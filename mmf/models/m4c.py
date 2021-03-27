@@ -55,7 +55,7 @@ class M4C(BaseModel):
     ########## AA ##########
     def set_beam_size(self, beam_size):
         self.beam_size = beam_size
-        self.bsdecoder = BeamSearch(self.beam_size)
+        self.bsdecoder = BeamSearch(self.beam_size, self.answer_processor.BOS_IDX)
         logger.info(f"Using beam size: {self.beam_size}")
     ########## AA ##########
 
@@ -183,8 +183,15 @@ class M4C(BaseModel):
     ########## AA ##########
     def _forward_beam_search(self, sample_list, batch_dict):
         dec_step_num = sample_list.train_prev_inds.size(1)
+        batch_dict['pad_obj_features'] = sample_list.image_feature_0
+        batch_dict['pad_obj_bboxes'] = sample_list.obj_bbox_coordinates
+        batch_dict['ocr_fasttext'] = sample_list.context_feature_0
+        batch_dict['ocr_phoc'] = sample_list.context_feature_1
+        batch_dict['pad_ocr_features'] = sample_list.image_feature_1[:, : sample_list.context_feature_0.size(1), :]
+        batch_dict['pad_ocr_bboxes'] = sample_list.ocr_bbox_coordinates
+
         # Decoding with beam search
-        batch_dict = self.bsdecoder.init_batch(batch_dict)
+        batch_dict = self.bsdecoder.init_batch(batch_dict, self.answer_processor.BOS_IDX)
 
         for t in range(dec_step_num):
             self._forward_mmt(batch_dict)
@@ -206,11 +213,17 @@ class M4C(BaseModel):
         if self.training:
             self._forward_mmt_and_output(sample_list, fwd_results)
         else:
-            self._forward_beam_search(fwd_results)
+            self._forward_beam_search(sample_list, fwd_results)
         ########## AA ##########
 
         # only keep scores in the forward pass results
         results = {"scores": fwd_results["scores"]}
+
+        ########## AA ##########
+        if "complete_seqs" in fwd_results:
+            results["complete_seqs"] = fwd_results["complete_seqs"].squeeze()
+        ########## AA ##########
+
         return results
 
     def _forward_txt_encoding(self, sample_list, fwd_results):

@@ -1,15 +1,12 @@
 import torch
 
-from tools.registry import registry
-
-
 class BeamSearch:
-    def __init__(self, beam_size):
+    def __init__(self, beam_size, BOS_IDX):
         # Lists to store completed sequences and scores
         self._decode_size = beam_size
         self._complete_seqs = []
         self._complete_seqs_scores = []
-        self._EOS_IDX = registry.EOS_IDX
+        self._EOS_IDX = BOS_IDX
         self.completed_ids = None
         self.batch_dict_keys = [
             "pad_obj_features",
@@ -18,20 +15,18 @@ class BeamSearch:
             "ocr_phoc",
             "pad_ocr_features",
             "pad_ocr_bboxes",
-            "question_indices",
-            "question_mask",
-            "pad_obj_mask",
-            "pad_ocr_mask",
-            "spatial_adj_matrices",
+            "txt_inds",
+            "txt_mask",
+            "obj_mask",
+            "ocr_mask",
             "ocr_mmt_in",
-            "obj_mmt_in",
-            "question_id",
+            "obj_mmt_in"
         ]
 
-    def init_batch(self, batch_dict):
+    def init_batch(self, batch_dict, BOS_IDX):
         self._complete_seqs = []
         self._complete_seqs_scores = []
-        self._EOS_IDX = registry.EOS_IDX
+        self._EOS_IDX = BOS_IDX
         self.completed_ids = None
 
         self._batch_size = batch_dict["prev_inds"].shape[0]
@@ -53,7 +48,7 @@ class BeamSearch:
 
         self.seqs = batch_dict["prev_inds"].new_full(
             (self._batch_size * self._decode_size, 1),
-            registry.BOS_IDX,
+            BOS_IDX,
             dtype=torch.long,
         )
 
